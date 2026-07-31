@@ -28,7 +28,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="google.protobuf"
 
 import cv2
 import mediapipe as mp
-from collections import deque, Counter
+from collections import deque
 
 try:
     from absl import logging as absl_logging
@@ -41,6 +41,7 @@ import ui
 from normalizer import normalize_landmarks
 from predictor import Predictor
 from text_builder import TextBuilder
+from prediction_buffer import SmartBuffer
 from utils import FPSCounter
 from tts import Speaker
 
@@ -51,6 +52,12 @@ def main():
 
     predictor = Predictor()
     print("Model, scaler and label encoder loaded successfully!")
+    if predictor.has_calibrated_confidence:
+        print("Calibrated confidence available -- confidence gating and adaptive hold are ACTIVE.")
+    else:
+        print("No calibrated confidence (model wasn't trained with probability=True).")
+        print("Confidence gating and adaptive hold are OFF; using fixed hold time instead.")
+        print("Run scripts/retrain_with_probability.py to enable them.")
 
     mp_hands = mp.solutions.hands
     mp_drawing = mp.solutions.drawing_utils
@@ -66,7 +73,7 @@ def main():
     fps_counter = FPSCounter()
     history = deque(maxlen=config.HISTORY_LENGTH)
 
-    prediction_buffer = deque(maxlen=config.BUFFER_SIZE)
+    prediction_buffer = SmartBuffer()
     stable_prediction = None
     last_confidence = None
 
@@ -121,9 +128,8 @@ def main():
                         predicted_label, confidence = predictor.predict(features)
                         last_confidence = confidence
 
-                        prediction_buffer.append(predicted_label)
-                        most_common_label, count = Counter(prediction_buffer).most_common(1)[0]
-                        agreement = count / len(prediction_buffer)
+                        prediction_buffer.append(predicted_label, confidence)
+                        most_common_label, agreement, stable_confidence = prediction_buffer.vote()
 
                         if agreement >= config.AGREEMENT_THRESHOLD:
                             stable_prediction = most_common_label
@@ -132,7 +138,12 @@ def main():
 
                         ui.draw_raw_prediction(frame, predicted_label)
 
-                        result = text_builder.update(stable_prediction)
+                        # Only pass confidence through when it's calibrated (real
+                        # predict_proba) -- otherwise text_builder falls back to the
+                        # fixed hold time / no gating, which is the safe default.
+                        confidence_for_gating = (stable_confidence
+                                                  if predictor.has_calibrated_confidence else None)
+                        result = text_builder.update(stable_prediction, confidence=confidence_for_gating)
                         if result["accepted"]:
                             history.append(result["accepted"])
                             print("Accepted:", result["accepted"], "| Text:", text_builder.text)

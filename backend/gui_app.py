@@ -23,7 +23,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="google.protobuf"
 
 import tkinter as tk
 from tkinter import filedialog, messagebox
-from collections import deque, Counter
+from collections import deque
 
 import cv2
 from PIL import Image, ImageTk
@@ -39,6 +39,7 @@ import config
 from normalizer import normalize_landmarks
 from predictor import Predictor
 from text_builder import TextBuilder
+from prediction_buffer import SmartBuffer
 from utils import FPSCounter
 from tts import Speaker
 
@@ -69,7 +70,7 @@ class ASLTranslatorApp:
         self.text_builder = TextBuilder()
         self.speaker = Speaker()
         self.fps_counter = FPSCounter()
-        self.prediction_buffer = deque(maxlen=config.BUFFER_SIZE)
+        self.prediction_buffer = SmartBuffer()
 
         self.cap = cv2.VideoCapture(0)
         if not self.cap.isOpened():
@@ -149,6 +150,7 @@ class ASLTranslatorApp:
 
             stable_prediction = None
             confidence = None
+            stable_confidence = None
 
             if results.multi_hand_landmarks:
                 hand_landmarks = results.multi_hand_landmarks[0]
@@ -157,9 +159,8 @@ class ASLTranslatorApp:
                 features = normalize_landmarks(hand_landmarks)
                 if features is not None:
                     label, confidence = self.predictor.predict(features)
-                    self.prediction_buffer.append(label)
-                    most_common_label, count = Counter(self.prediction_buffer).most_common(1)[0]
-                    agreement = count / len(self.prediction_buffer)
+                    self.prediction_buffer.append(label, confidence)
+                    most_common_label, agreement, stable_confidence = self.prediction_buffer.vote()
                     if agreement >= config.AGREEMENT_THRESHOLD:
                         stable_prediction = most_common_label
                 else:
@@ -169,7 +170,9 @@ class ASLTranslatorApp:
                 self.prediction_buffer.clear()
                 self.text_builder.on_hand_lost()
 
-            result = self.text_builder.update(stable_prediction)
+            confidence_for_gating = (stable_confidence
+                                      if self.predictor.has_calibrated_confidence else None)
+            result = self.text_builder.update(stable_prediction, confidence=confidence_for_gating)
             self._update_text_box()
 
             if stable_prediction is not None:

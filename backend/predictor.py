@@ -16,10 +16,18 @@ class Predictor:
         self.scaler = joblib.load(scaler_path)
         self.label_encoder = joblib.load(encoder_path)
 
-        # Phase 3 needs a confidence number. Only some SVMs expose predict_proba
-        # (requires probability=True at training time), so we fall back gracefully.
+        # Phase 3/6 needs a confidence number. Only some SVMs expose predict_proba
+        # (requires probability=True at training time) -- when it's missing we
+        # fall back to a softmax over decision_function, which is NOT calibrated
+        # (it doesn't reliably separate correct from wrong predictions). Callers
+        # that want to gate acceptance on confidence should check
+        # has_calibrated_confidence first and only trust the number if True.
         self._has_proba = hasattr(self.model, "predict_proba")
         self._has_decision = hasattr(self.model, "decision_function")
+
+    @property
+    def has_calibrated_confidence(self):
+        return self._has_proba
 
     def predict(self, features):
         """
