@@ -3,7 +3,7 @@
 import numpy as np
 
 
-def normalize_landmarks(hand_landmarks):
+def normalize_landmarks(hand_landmarks, hand_label):
     """
     Convert MediaPipe's 21 hand landmarks into a translation- and scale-
     invariant 63-feature vector (21 points x 3 coords), matching training.
@@ -15,6 +15,8 @@ def normalize_landmarks(hand_landmarks):
         [[lm.x, lm.y, lm.z] for lm in hand_landmarks.landmark],
         dtype=np.float64
     )
+    if hand_label == "Right":
+        landmarks[:, 0] = 1.0 - landmarks[:, 0]
 
     if landmarks.shape != (21, 3):
         return None

@@ -116,13 +116,15 @@ def main():
             if run_detection:
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 results = hands.process(frame_rgb)
+                
 
                 if results.multi_hand_landmarks:
                     hand_present = True
                     hand_landmarks = results.multi_hand_landmarks[0]
+                    hand_label = results.multi_handedness[0].classification[0].label
                     mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
-                    features = normalize_landmarks(hand_landmarks)
+                    features = normalize_landmarks(hand_landmarks, hand_label)
 
                     if features is not None:
                         predicted_label, confidence = predictor.predict(features)
@@ -146,7 +148,12 @@ def main():
                         result = text_builder.update(stable_prediction, confidence=confidence_for_gating)
                         if result["accepted"]:
                             history.append(result["accepted"])
-                            print("Accepted:", result["accepted"], "| Text:", text_builder.text)
+                            print(
+    f"Accepted: {result['accepted']} | "
+    f"Hand: {hand_label} | "
+    f"Confidence: {confidence:.2%} | "
+    f"Text: {text_builder.text}"
+)
 
                         if stable_prediction is not None:
                             ui.draw_stable_prediction(frame, stable_prediction, agreement,
