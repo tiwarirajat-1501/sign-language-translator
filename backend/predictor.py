@@ -31,7 +31,7 @@ class Predictor:
 
     def predict(self, features):
         """
-        features: 1D array of length 63.
+        features: 1D array of length 73.
         Returns (label: str, confidence: float or None).
         confidence is in [0, 1] when available, otherwise None.
         """
